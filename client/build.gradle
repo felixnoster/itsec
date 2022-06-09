@@ -1,0 +1,22 @@
+plugins {
+    id 'java-library'
+}
+
+group 'edu.hm.cs.ib.itsec.client'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.6.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+    // https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk15on
+    implementation group: 'org.bouncycastle', name: 'bcprov-jdk15on', version: '1.68'
+
+}
+
+test {
+    useJUnitPlatform()
+}
