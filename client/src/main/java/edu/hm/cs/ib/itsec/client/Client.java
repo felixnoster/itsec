@@ -7,10 +7,14 @@ import org.bouncycastle.jce.spec.ECParameterSpec;
 import org.bouncycastle.pqc.math.linearalgebra.ByteUtils;
 import org.bouncycastle.util.encoders.Base64;
 
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.Socket;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -18,12 +22,11 @@ import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
 
 
-
 public class Client {
 
     private static final int TAG_LENGTH_BIT = 128;
 
-    private static final String EMAIL = "ilie.doni@hm.edu";
+    private static final byte[] EMAIL = "ilie.doni@hm.edu".getBytes(StandardCharsets.UTF_8);
 
     private static final String PROVIDER = "BC";
     private Socket socket;
@@ -46,6 +49,14 @@ public class Client {
     public static byte[] xorByteArray(byte[] input, int seqNumber) {
         byte[] param = ByteBuffer.allocate(input.length).putInt(8, seqNumber).array();
         return ByteUtils.xor(input, param);
+    }
+
+    private static KeyPair generateKeyPair() throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
+        X9ECParameters ecP = CustomNamedCurves.getByName("curve25519");
+        ECParameterSpec ecSpec = new ECParameterSpec(ecP.getCurve(), ecP.getG(), ecP.getN(), ecP.getH(), ecP.getSeed());
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC", new BouncyCastleProvider());
+        keyGen.initialize(ecSpec);
+        return keyGen.generateKeyPair();
     }
 
     private void run() {
@@ -118,7 +129,7 @@ public class Client {
      * @return the public key.
      */
     private PublicKey getPubkey() throws Exception {
-        final Path pubKey = Paths.get("data/public.key");
+        final Path pubKey = Paths.get("client/data/public.key");
         try (final BufferedReader pubKeyreader = Files.newBufferedReader(pubKey)) {
             final KeyFactory kf = KeyFactory.getInstance("EC", PROVIDER);
             final X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(Base64.decode(pubKeyreader.readLine()));
@@ -131,31 +142,34 @@ public class Client {
 
         /**
          * Your task is to implement this method.
-         * The following steps must be implemented: 
+         * The following steps must be implemented:
          *  - Generate an keypair using the curve25519
          *  - Encrypt the public component and your email using EC-IES with the public key of the server
          *  - Send the data to the server and receive the encrypted IV and shared key
          *  - Decrypt the data using EC-IES and your own private key and return the values
          */
 
-        generateKeys("1024");
-        String method = "ECIES";
+        this.pair = generateKeyPair();
+        this.publicKey = pair.getPublic();
+        this.privateKey = pair.getPrivate();
 
-        Cipher cipherObjectEncrypt = getEncryptCipherObject(getPubkey(), method); /*mit update methode die email rein mit ECIES und UTF-8*/
+        PublicKey serverPublicKey = getPubkey();
 
+        Cipher cipher = Cipher.getInstance("ECIES", PROVIDER);
+        cipher.init(Cipher.ENCRYPT_MODE, serverPublicKey);
+        byte[] encryptedEmail = cipher.doFinal(EMAIL);
+
+        cipher.init(Cipher.ENCRYPT_MODE, serverPublicKey);
+        byte[] encryptedPublicKey = cipher.doFinal(getPublicKey().getEncoded());
+
+        EncryptedAsymmetricResponse value = sendAsymmetricData(encryptedPublicKey, encryptedEmail);
+
+        cipher.init(Cipher.DECRYPT_MODE, getPrivateKey());
+
+        returnValue.InitializationVector =  value.InitializationVector;
+        returnValue.SharedSecret = new SecretKeySpec(value.SharedSecret, "ECIES");
 
         return returnValue;
-    }
-
-    public GenerateKeys(int keylength) throws NoSuchAlgorithmException, NoSuchProviderException {
-        this.keyGen = KeyPairGenerator.getInstance("EC", new BouncyCastleProvider());
-        this.keyGen.initialize(keylength);
-    }
-
-    public void createKeys() {
-        this.pair = this.keyGen.generateKeyPair();
-        this.privateKey = pair.getPrivate();
-        this.publicKey = pair.getPublic();
     }
 
     public PrivateKey getPrivateKey() {
@@ -176,21 +190,6 @@ public class Client {
         fos.close();
     }
 
-
-    private static KeyPair generateKeyPair() throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
-        X9ECParameters ecP = CustomNamedCurves.getByName("curve25519");
-        ECParameterSpec ecSpec = new ECParameterSpec(ecP.getCurve(), ecP.getG(), ecP.getN(), ecP.getH(), ecP.getSeed());
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC", new BouncyCastleProvider());
-        keyGen.initialize(ecSpec);
-        return keyGen.generateKeyPair();
-
-
-
-    }
-
-
-
-
     private String doSymmetricEncryption(AsymmetricResponse asymmetricResponse) throws Exception {
         String secret = null;
 
@@ -205,6 +204,8 @@ public class Client {
          *  - message number for response to client: 2
          */
 
+//        Cipher cipher = Cipher.getInstance("AES");
+//        cipher.init(Cipher.ENCRYPT_MODE, )
         return secret;
     }
 }
