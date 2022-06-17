@@ -9,6 +9,8 @@ import org.bouncycastle.util.encoders.Base64;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.Socket;
@@ -140,7 +142,7 @@ public class Client {
     private AsymmetricResponse doAsymmetricEncryption() throws Exception {
         var returnValue = new AsymmetricResponse();
 
-        /**
+        /*
          * Your task is to implement this method.
          * The following steps must be implemented:
          *  - Generate an keypair using the curve25519
@@ -157,17 +159,17 @@ public class Client {
 
         Cipher cipher = Cipher.getInstance("ECIES", PROVIDER);
         cipher.init(Cipher.ENCRYPT_MODE, serverPublicKey);
-        byte[] encryptedEmail = cipher.doFinal(EMAIL);
 
-        cipher.init(Cipher.ENCRYPT_MODE, serverPublicKey);
+        byte[] encryptedEmail = cipher.doFinal(EMAIL);
         byte[] encryptedPublicKey = cipher.doFinal(getPublicKey().getEncoded());
 
         EncryptedAsymmetricResponse value = sendAsymmetricData(encryptedPublicKey, encryptedEmail);
 
         cipher.init(Cipher.DECRYPT_MODE, getPrivateKey());
 
-        returnValue.InitializationVector =  value.InitializationVector;
-        returnValue.SharedSecret = new SecretKeySpec(value.SharedSecret, "ECIES");
+        returnValue.InitializationVector = cipher.doFinal(value.InitializationVector);
+        byte[] sharedSecret = cipher.doFinal(value.SharedSecret);
+        returnValue.SharedSecret = new SecretKeySpec(sharedSecret, "EC-IES");
 
         return returnValue;
     }
@@ -191,11 +193,11 @@ public class Client {
     }
 
     private String doSymmetricEncryption(AsymmetricResponse asymmetricResponse) throws Exception {
-        String secret = null;
+        String secret;
 
-        /**
+        /*
          * Your task is to implement this method.
-         * The following steps must be implemented: 
+         * The following steps must be implemented:
          *  - Encrypt your email using AES-GCM, the provided shared key and IV
          *  - Send the data to the server and receive the encrypted shared secret
          *  - Decrypt the data using the shared key and IV
@@ -204,8 +206,21 @@ public class Client {
          *  - message number for response to client: 2
          */
 
-//        Cipher cipher = Cipher.getInstance("AES");
-//        cipher.init(Cipher.ENCRYPT_MODE, )
+        byte[] ivRequest = xorByteArray(asymmetricResponse.InitializationVector, 1);
+        GCMParameterSpec paramRequest = new GCMParameterSpec(TAG_LENGTH_BIT, ivRequest);
+
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, asymmetricResponse.SharedSecret, paramRequest);
+
+        byte[] encryptedEmail = cipher.doFinal(EMAIL);
+        byte[] sharedSecret = sendSymmetricData(encryptedEmail);
+
+        byte[] ivResponse = xorByteArray(asymmetricResponse.InitializationVector, 2);
+        GCMParameterSpec paramsResponse = new GCMParameterSpec(TAG_LENGTH_BIT, ivResponse);
+        cipher.init(Cipher.DECRYPT_MODE, asymmetricResponse.SharedSecret, paramsResponse);
+
+        byte[] plaintext = cipher.doFinal(sharedSecret);
+        secret = new String(plaintext);
         return secret;
     }
 }
